@@ -1,0 +1,109 @@
+#Verify scrupt is being run as an administrator.
+If (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
+{
+  # Relaunch as an elevated process:
+  Start-Process powershell.exe "-File",('"{0}"' -f $MyInvocation.MyCommand.Path) -Verb RunAs
+  exit
+}
+
+#Variables
+$CurrName = $env:COMPUTERNAME
+$Domaincreds = get-Credential -Message "Please enter your domain credentials such as Domain\User"
+
+#Choose Domain
+$Title = "Domain"
+$Message = "What Domain will the computer be in?"
+$Options = "&PCC", "&EDU", "&Exit"
+
+$DefaultChoice = 0
+$Result = $Host.UI.PromptForChoice($Title, $Message, $Options, $DefaultChoice)
+
+switch ($Result) {
+    "0"	{
+        $Domain = "PCC-Domain.pima.edu"
+    }
+    "1"	{
+        $Domain = "EDU-Domain.pima.edu"
+    }
+    "2"	{
+
+    }
+}
+
+#Choose Campus
+$Title = "Campus"
+$Message = "What Campus will this be at?"
+$Options = "&DO", "&MS", "&Exit"
+
+$DefaultChoice = 0
+$Result = $Host.UI.PromptForChoice($Title, $Message, $Options, $DefaultChoice)
+
+switch ($Result) {
+    "0"	{
+        #Beginning rename Part
+        $CN = "DO"
+        if ($Domain -eq "PCC-Domain.pima.edu") {
+            #PCC Landing OU For DO
+            $OU = "OU=Building A,OU=District,OU=PCC,DC=PCC-Domain,DC=pima,DC=EDU"
+        }
+        else {
+            #EDU Landing OU For DO
+            $OU = "OU=District Office,OU=Classrooms,OU=EDU_Computers,DC=edu-domain,DC=pima,DC=edu"
+
+        }
+
+    }
+    "1"	{
+        #Beginning rename Part
+        $CN = "MS"
+        if ($Domain -eq "PCC-Domain.pima.edu") {
+            #PCC Landing OU For M&S
+            $OU = "OU=Win10_Staging,OU=Maintenance and Security,OU=PCC,DC=PCC-Domain,DC=pima,DC=EDU"
+        }
+        else {
+            #EDU Landing OU For M&S
+            $OU =  "OU=District Office,OU=Classrooms,OU=EDU_Computers,DC=edu-domain,DC=pima,DC=edu"
+        }
+    }
+    "2"	{
+
+    }
+}
+#Checks campus against current beginnings ie DO against DO-A101123456SC, If it doesnt it will build a new name. 
+if ($CN -notmatch $CurrName) {
+    Write-Host "Make sure to use captial letters"
+    #Uses this to enter the room part of the name
+    $RoomName = Read-Host -Prompt "Enter the Room Number"
+    #Uses this to enter the asset number part of the name
+    $Asset = Read-Host -Prompt "Enter the Asset Number"
+    #Changes the second to last character of the name
+    if ($Domain -eq "PCC-Domain.pima.edu" ) {
+        $DomName = "S"
+    }
+    elseif ($Domain -eq "edu-Domain.pima.edu") {
+        $DomName = "L"
+    }
+    #Uses this to enter what kind of computer it is N or C
+    $Chassis = (Get-WmiObject -Class Win32_ComputerSystem).PCSystemtype
+    #$Chassis -eq "2" is for (N)laptop, if its not a laptop it will name it (C)Desktop
+    if ($Chassis -eq "2") {
+        $ChasName = "N"
+    }
+    else {
+        $ChasName = "C"
+    }
+    #This is the combination of all the the name
+    $NewName = $CN + "-" + $RoomName + $Asset + $DomName + $ChasName
+}
+
+#Will run different commands depending on the NewName variable
+if ($null -ne $NewName) {
+    #Will rename computer, add to domain, and restart
+    Add-Computer -DomainName $Domain  -NewName $NewName -OUPath $OU -Credential $Domaincreds -Restart -Force
+}
+else {
+    #Will add to domain and restart
+    Add-Computer -DomainName $Domain -OUPath $OU -Credential $Domaincreds -Restart -Force
+}
+
+
